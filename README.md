@@ -1,103 +1,72 @@
 # ultracode-live-engineer
 
-An unattended, self-paced loop for Claude Code that does two things on a
-timer, forever, until you stop it:
+An unattended Claude Code loop that reviews PRs you're @-mentioned on in Slack and works your Jira backlog — self-paced, forever, until you stop it.
 
-1. **Reviews PRs people @-mention you on in a Slack channel** — scans the
-   channel and its threads for messages that both mention you and link a
-   GitHub PR, runs a full code review on each one, posts the findings (or
-   approves outright if only nits survive), and replies in the thread.
-2. **Works your Jira backlog** — picks up tickets assigned to you in a
-   "ready to implement" status, root-causes and implements them in an
-   isolated git worktree, opens a PR, requests review in Slack, and moves
-   the ticket to "in review". Anything ambiguous — can't reproduce, needs a
-   human judgment call, not converging after a reasonable number of
-   attempts — gets parked with a Jira comment explaining the doubt and a
-   Slack DM, instead of guessing or spinning forever.
+```mermaid
+flowchart TD
+    W(("⏰ Wake")) --> P1 & P2 & P3
 
-It's generalized out of a real production deployment (redacted of any
-project- or company-specific detail) and is fully config-driven — every
-identifier (repo, Slack channel, Jira project, etc.) lives in a config file
-you create per project, not in the plugin itself.
+    P1["👀 Slack Review<br/>mention + PR link → review → reply"]
+    P2["🔁 PR Follow-up<br/>fix requested changes on own PRs"]
+    P3["🎫 Jira Selection<br/>resume on-hold + pick new tickets"]
 
-## How it fits together
+    P3 --> I["🛠️ Implement<br/>isolated git worktree"]
+    I -->|success| PR["✅ Open PR + request review"]
+    I -->|ambiguous / stuck| H["🚧 Escalate<br/>Jira comment · On Hold · Slack DM"]
 
-- `skills/ultracode-live-engineer/SKILL.md` — a thin driver: reads your
-  project's config, runs the workflow, reads its summary, and schedules the
-  next wake-up via Claude Code's `ScheduleWakeup`/`/loop` mechanism. This is
-  the piece `/loop` actually invokes.
-- `workflows/ultracode-live-engineer.js` — the actual multi-agent Workflow:
-  Slack scanning, PR review dispatch, Jira ticket selection/resume,
-  implementation, and HITL (human-in-the-loop) escalation. All the domain
-  logic lives here.
-- `workflows/ultracode-live-engineer/` — the workflow's mechanical rule
-  engine (`pass_rules.py` + `lib/`): things like "is this PR still open",
-  "does this message really contain an exact @-mention", "is this branch
-  abandoned" are answered by deterministic Python, not left to model
-  judgment, because getting them wrong by "eyeballing" text was a real
-  failure mode during development. See `CONFIG.md` for the full field
-  reference and `tests/` for the test suite covering these rules.
-- `skills/ticket-to-pr/SKILL.md` — a generic starter template for the
-  `ticket_to_pr` skill this loop delegates ticket implementation to. It has
-  the right phase structure and the `{status, pr_url?, reason?}` contract,
-  but every project-specific detail is a marked `TODO(project)` — see
-  Prerequisites below.
+    P1 --> Sum
+    P2 --> Sum
+    PR --> Sum
+    H --> Sum(("📋 Summary<br/>schedule next wake"))
+
+    H -.human replies.-> P3
+
+    style W fill:#6366f1,color:#fff
+    style Sum fill:#6366f1,color:#fff
+    style H fill:#f59e0b,color:#000
+    style PR fill:#22c55e,color:#000
+```
+
+No human input required mid-pass — anything ambiguous parks itself on hold and picks back up automatically once a person replies.
+
+## What it does
+
+|                        |                                                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| 👀 **Slack Review**    | Scans a channel for `@you` + a PR link, runs a full review, approves outright if only nits survive        |
+| 🎫 **Jira Backlog**    | Root-causes, implements, tests, and PRs tickets in a "ready" status — in an isolated worktree             |
+| 🔁 **PR Follow-up**    | Fixes review feedback / failing checks on its own open PRs                                                |
+| 🚧 **HITL Escalation** | Can't reproduce, needs a judgment call, not converging → Jira comment + On Hold + Slack DM, never guesses |
+
+Fully config-driven — repo, Slack channel, Jira project, everything lives in a per-project `config.json`, never in the plugin.
+
+## Layout
+
+| Path                                     | Purpose                                                                                  |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `skills/ultracode-live-engineer/`        | Thin driver — reads config, runs the workflow, schedules the next wake via `/loop`       |
+| `workflows/ultracode-live-engineer.js`   | The multi-agent Workflow — all domain logic                                              |
+| `workflows/ultracode-live-engineer/lib/` | Deterministic rules (open PR? exact mention? stale branch?) — not left to model judgment |
+| `skills/ticket-to-pr/`                   | Generic starter skill for ticket implementation — `TODO(project)` markers to fill in     |
 
 ## Prerequisites
 
-- Claude Code with `/loop` (autonomous scheduler) available.
-- A connected Atlassian MCP server (Jira) and a connected Slack MCP server
-  (the `slack_read_channel` / `slack_read_thread` / `slack_send_message`
-  family of tools).
-- `gh` CLI authenticated as the GitHub account you want this loop to act as.
-- A `review-pr`-style skill for PR review (any generic one works out of the
-  box) and an `ask-team-to-review`-style skill for posting a review request
-  to Slack.
-- **A filled-in `ticket_to_pr` skill.** This plugin ships a generic starter
-  (`skills/ticket-to-pr/`) with the right phase structure and contract
-  (given a ticket key + optional resume context: root-cause first, minimal
-  diff, real tests, PR, mandatory multi-angle review, close the ticket,
-  return `{status: "success"|"escalated"|"failed", pr_url?, reason?}`), but
-  "how do I implement a ticket in this specific codebase" is inherently
-  project-specific — walk its `TODO(project)` markers (repro data sources,
-  formatter/lockfile traps, sub-agents, required Jira fields) and fill them
-  in before pointing the unattended loop at it. Point `config.json`'s
-  `skills.ticket_to_pr` at your customized copy (rename it if you fork it
-  per-project).
+- [ ] Claude Code with `/loop` available
+- [ ] Connected Atlassian MCP (Jira) + Slack MCP servers
+- [ ] `gh` CLI authenticated as the acting GitHub account
+- [ ] A `review-pr`-style and `ask-team-to-review`-style skill (generic ones work out of the box)
+- [ ] Your own `ticket_to_pr` skill, customized from the shipped starter
 
 ## Install
 
-1. Add this plugin (from a marketplace pointing at this repo, or by
-   installing it directly — see Claude Code's plugin docs for the exact
-   command your version supports). Once installed, `${CLAUDE_PLUGIN_ROOT}`
-   resolves to this plugin's install directory.
-2. In the **target project repo** you want the loop to work against, copy
-   `workflows/ultracode-live-engineer/config.example.json` (from inside the
-   plugin) to `.claude/ultracode-live-engineer/config.json` in that repo,
-   and fill in every field — see `workflows/ultracode-live-engineer/CONFIG.md`
-   for the full reference. Config is per-project and lives in the project,
-   not in the plugin — you can point this loop at multiple repos, each with
-   its own config.
-3. Customize the shipped `ticket-to-pr` starter skill for your project (see
-   Prerequisites above) — it already defaults into `config.json`'s
-   `skills.ticket_to_pr` field, just fill in its `TODO(project)` markers.
-4. Kick it off with `/loop` invoking `Skill("ultracode-live-engineer")`. It
-   self-paces its own wake-ups from there (short recheck if it did work,
-   longer idle backoff if there was nothing to do) — no cron/interval setup
-   needed.
+1. Install the plugin — `${CLAUDE_PLUGIN_ROOT}` then resolves to it.
+2. In the **target repo**, copy `workflows/ultracode-live-engineer/config.example.json` → `.claude/ultracode-live-engineer/config.json` and fill it in (see `CONFIG.md`). One config per repo — point the loop at as many as you like.
+3. Fill in the `TODO(project)` markers in `skills/ticket-to-pr/`.
+4. Kick off with `/loop` → `Skill("ultracode-live-engineer")`. It paces its own wake-ups from there.
 
 ## Safety model
 
-The workflow hard-codes a set of guardrails into every implementation/fix
-prompt it dispatches: never merge a PR, never force-push, never push
-directly to the default branch, no destructive DB/infra commands against
-shared environments, never skip hooks or tests, always work in an isolated
-git worktree (never the operator's live checkout), and a configurable cap
-on how many tickets can be in flight at once. Anything a mechanical rule
-can decide (is this PR open, is this branch abandoned, is this the exact
-mention token) is decided by deterministic code in `lib/`, not by model
-judgment — see the module docstrings in `lib/slack_scan.py` and
-`lib/github.py` for the specific incidents that motivated each rule.
+Every dispatched prompt carries hard guardrails: never merge, never force-push, never push to the default branch, never skip hooks/tests, always an isolated worktree, a configurable cap on tickets in flight. Anything mechanically decidable (PR open? exact mention token? branch abandoned?) is deterministic code, not model judgment — see `lib/slack_scan.py` / `lib/github.py`.
 
 ## License
 
