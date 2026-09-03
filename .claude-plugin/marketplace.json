@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ultracode-live-engineer",
+  "description": "Unattended Jira-implement and Slack-PR-review loop for Claude Code, driven by the /loop autonomous scheduler.",
+  "owner": {
+    "name": "AlvaroRaul7",
+    "url": "https://github.com/AlvaroRaul7"
+  },
+  "plugins": [
+    {
+      "name": "ultracode-live-engineer",
+      "description": "Watches Slack for @mention-tagged PR review requests and works a Jira backlog end-to-end, unattended.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

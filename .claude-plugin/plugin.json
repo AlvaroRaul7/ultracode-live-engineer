@@ -1,0 +1,12 @@
+{
+  "name": "ultracode-live-engineer",
+  "description": "Unattended loop: watches Slack for @mention-tagged PR review requests and works a Jira backlog end-to-end, wired into the /loop autonomous scheduler.",
+  "author": {
+    "name": "AlvaroRaul7",
+    "url": "https://github.com/AlvaroRaul7"
+  },
+  "homepage": "https://github.com/AlvaroRaul7/ultracode-live-engineer",
+  "repository": "https://github.com/AlvaroRaul7/ultracode-live-engineer",
+  "license": "MIT",
+  "skills": "./skills/"
+}

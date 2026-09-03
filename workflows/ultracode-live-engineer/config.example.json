@@ -1,0 +1,22 @@
+{
+  "repo": "your-org/your-repo",
+  "bot_github_login": "your-bot-github-username",
+  "slack_channel_id": "C0000000000",
+  "slack_channel_name": "your-slack-channel",
+  "human_slack_id": "U0000000000",
+  "jira_cloud_id": "yourcompany.atlassian.net",
+  "jira_project_key": "PROJ",
+  "max_concurrent_tickets": 4,
+  "branch_prefix": "fix/",
+  "jira_statuses": {
+    "in_development": "In Development",
+    "in_review": "In Review",
+    "on_hold": "On Hold"
+  },
+  "skills": {
+    "ticket_to_pr": "your-ticket-to-pr-skill",
+    "pr_review": "review-pr",
+    "request_review": "ask-team-to-review"
+  },
+  "jira_root_cause_hint": null
+}
