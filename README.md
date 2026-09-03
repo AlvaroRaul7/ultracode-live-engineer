@@ -37,6 +37,11 @@ you create per project, not in the plugin itself.
   judgment, because getting them wrong by "eyeballing" text was a real
   failure mode during development. See `CONFIG.md` for the full field
   reference and `tests/` for the test suite covering these rules.
+- `skills/ticket-to-pr/SKILL.md` — a generic starter template for the
+  `ticket_to_pr` skill this loop delegates ticket implementation to. It has
+  the right phase structure and the `{status, pr_url?, reason?}` contract,
+  but every project-specific detail is a marked `TODO(project)` — see
+  Prerequisites below.
 
 ## Prerequisites
 
@@ -48,13 +53,17 @@ you create per project, not in the plugin itself.
 - A `review-pr`-style skill for PR review (any generic one works out of the
   box) and an `ask-team-to-review`-style skill for posting a review request
   to Slack.
-- **A `ticket_to_pr` skill you author yourself.** This is the one piece this
-  plugin deliberately does not ship, because "how do I implement a ticket in
-  this codebase" is inherently project-specific. Contract (see `CONFIG.md`
-  for the full spec): given a ticket key (+ optional resume context), it
-  does root-cause analysis first, implements with a minimal diff, runs real
-  tests, opens a PR, and returns
-  `{status: "success"|"escalated"|"failed", pr_url?, reason?}`.
+- **A filled-in `ticket_to_pr` skill.** This plugin ships a generic starter
+  (`skills/ticket-to-pr/`) with the right phase structure and contract
+  (given a ticket key + optional resume context: root-cause first, minimal
+  diff, real tests, PR, mandatory multi-angle review, close the ticket,
+  return `{status: "success"|"escalated"|"failed", pr_url?, reason?}`), but
+  "how do I implement a ticket in this specific codebase" is inherently
+  project-specific — walk its `TODO(project)` markers (repro data sources,
+  formatter/lockfile traps, sub-agents, required Jira fields) and fill them
+  in before pointing the unattended loop at it. Point `config.json`'s
+  `skills.ticket_to_pr` at your customized copy (rename it if you fork it
+  per-project).
 
 ## Install
 
@@ -69,8 +78,9 @@ you create per project, not in the plugin itself.
    for the full reference. Config is per-project and lives in the project,
    not in the plugin — you can point this loop at multiple repos, each with
    its own config.
-3. Author your project's `ticket_to_pr` skill (see Prerequisites above) and
-   reference its name in `config.json`'s `skills.ticket_to_pr` field.
+3. Customize the shipped `ticket-to-pr` starter skill for your project (see
+   Prerequisites above) — it already defaults into `config.json`'s
+   `skills.ticket_to_pr` field, just fill in its `TODO(project)` markers.
 4. Kick it off with `/loop` invoking `Skill("ultracode-live-engineer")`. It
    self-paces its own wake-ups from there (short recheck if it did work,
    longer idle backoff if there was nothing to do) — no cron/interval setup

@@ -14,7 +14,7 @@
     "on_hold": "On Hold"
   },
   "skills": {
-    "ticket_to_pr": "your-ticket-to-pr-skill",
+    "ticket_to_pr": "ticket-to-pr",
     "pr_review": "review-pr",
     "request_review": "ask-team-to-review"
   },

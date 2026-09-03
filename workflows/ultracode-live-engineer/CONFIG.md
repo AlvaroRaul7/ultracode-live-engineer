@@ -34,12 +34,14 @@ servers and your `gh` CLI login.
   Jira project configuration — verify via `getTransitionsForJiraIssue`
   against a real ticket before trusting the example values.
 - `skills` — names of the three skills this loop delegates to:
-  - `ticket_to_pr`: **you must author this one.** Contract: invoked with a
-    ticket key (+ optional resume context), does root-cause analysis first
-    (using your project's own case/log-debugging skill for data-dependent
-    bugs), implements with a minimal diff, runs real tests, opens a PR
-    against the default branch, and returns
-    `{status: "success"|"escalated"|"failed", pr_url?, reason?}`.
+  - `ticket_to_pr`: defaults to the `ticket-to-pr` skill this plugin ships
+    (`skills/ticket-to-pr/`) — a generic starter template, **not a finished
+    skill**: it has the right phase structure (understand, root-cause,
+    branch, implement, test, PR, mandatory multi-angle review, close the
+    ticket) and the `{status, pr_url?, reason?}` contract this loop expects,
+    but every project-specific detail (repro data sources, formatter/
+    lockfile traps, sub-agents, required Jira fields) is a marked
+    `TODO(project)` for you to fill in before trusting it unattended.
   - `pr_review`: defaults to the generic, already-portable `review-pr` skill
     — no changes needed.
   - `request_review`: defaults to `ask-team-to-review`. Mostly portable
