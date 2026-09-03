@@ -141,6 +141,16 @@ const REVIEW_RESULT_SCHEMA = {
   },
 };
 
+const HOLD_SCHEMA = {
+  type: "object",
+  required: ["held"],
+  properties: {
+    held: { type: "boolean" },
+    matched_phrase: { type: ["string", "null"] },
+    reason: { type: ["string", "null"] },
+  },
+};
+
 const FLIGHT_SCHEMA = {
   type: "object",
   required: ["in_flight_count", "resumable"],
@@ -434,11 +444,53 @@ in flight at once.`;
     reviewOutcomes = await pipeline(
       unhandledPrs,
       (pr) => {
+        // Mechanical gate — run BEFORE any ack/review, never skipped: does a human have an
+        // explicit, unresolved objection open in this thread right now? (see
+        // ultracode-respect-explicit-hold — this loop used to re-APPROVE a PR on the very next
+        // pass after a reviewer said "don't merge it, I have objections" in the same thread the
+        // bot was watching, because the review-dispatch prompt below says a prior human reply is
+        // "not a substitute for this review — run it regardless", with no carve-out for an
+        // explicit objection.) No thread, nothing to check.
+        const threadTs = threadForPr(pr.pr);
+        if (!threadTs) return Promise.resolve({ held: false });
+        return agent(
+          `Fetch the Slack thread at ts ${threadTs} in channel ${SLACK_CHANNEL_ID} with ` +
+            `mcp__claude_ai_Slack__slack_read_thread. Pipe the full thread text on stdin into ` +
+            `\`python3 ${RULES} check-hold\` via Bash (run from the repo root). This is a mechanical, ` +
+            `exact-phrase check for an explicit human hold/objection reply (e.g. "don't merge", "still ` +
+            `in review", "stop", "hold off") — never judge this yourself from the thread text, trust ` +
+            `only the script's verdict. Return its JSON output verbatim.`,
+          {
+            label: `check-hold:${pr.pr}`,
+            phase: "Slack Review",
+            schema: HOLD_SCHEMA,
+          },
+        );
+      },
+      (hold, pr) => {
+        const threadTs = threadForPr(pr.pr);
+        if (hold && hold.held) {
+          // Held: post a one-line notice (if we haven't already — the ack text itself is what
+          // check-hold's next-pass "awaiting reply" branch looks for) and drop this PR from the
+          // pipeline entirely — no review, no re-APPROVE, no "Reviewed ..." reply.
+          if (
+            !threadTs ||
+            hold.reason === "awaiting reply since last hold notice"
+          ) {
+            return Promise.resolve(null);
+          }
+          return agent(
+            `Post a reply in the Slack thread with thread_ts ${threadTs} in channel ${SLACK_CHANNEL_ID} ` +
+              `via mcp__claude_ai_Slack__slack_send_message. No bot prefix — read as a normal reply. ` +
+              `Message: "Holding off on re-reviewing — noted the concern above. Reply here once it's ` +
+              `cleared and this will pick back up next pass."`,
+            { label: `slack-hold-ack:${pr.pr}`, phase: "Slack Review" },
+          ).then(() => null);
+        }
         // Resolve to a non-null sentinel, never null/undefined, when skipping the ack: pipeline()
         // treats a stage resolving to null the same as a stage that threw and drops the item,
         // skipping the review-pr/slack-reply stages entirely.
         if (!pr.re_review) return Promise.resolve("no-ack-needed");
-        const threadTs = threadForPr(pr.pr);
         if (!threadTs) return Promise.resolve("no-thread-for-ack");
         return agent(
           `Post a reply in the Slack thread with thread_ts ${threadTs} in channel ${SLACK_CHANNEL_ID} via ` +
@@ -452,7 +504,8 @@ in flight at once.`;
           `Run Skill("${SKILL_PR_REVIEW}") against ${PR_URL_BASE}${pr.pr} ("${pr.title}"). Let that skill do ` +
             `the actual review and post GitHub PR comments — don't duplicate its logic. A prior human reply ` +
             `already in the Slack thread (e.g. "approved") is not a substitute for this review — run it ` +
-            `regardless.\n\n` +
+            `regardless. (An EXPLICIT objection/hold, unlike a casual "approved", already stopped this PR ` +
+            `before it reached you — see the check-hold gate above; if you're running, that gate cleared.)\n\n` +
             `Explicit standing instruction, overriding the skill's own default of never approving on the ` +
             `user's behalf: if the review's surviving findings are either zero or all [nit]/[LOW] severity ` +
             `(no [MEDIUM]/[HIGH], no unresolved split-verdicts), post the review with event: "APPROVE" ` +

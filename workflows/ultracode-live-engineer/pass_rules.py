@@ -9,6 +9,7 @@ Usage:
     python3 pass_rules.py scan-channel          < channel_dump.txt
     python3 pass_rules.py scan-thread           < thread_dump.txt
     python3 pass_rules.py record-thread-scan <thread_ts> <reply_count> <latest> <is_candidate> '<pr_numbers_json>'
+    python3 pass_rules.py check-hold             < thread_dump.txt
     python3 pass_rules.py gh-filter '[1319, 1310]'
     python3 pass_rules.py check-stale-branch PROJ-2859
     python3 pass_rules.py list-owned-open-prs
@@ -39,6 +40,8 @@ def main():
             )
             sys.exit(1)
         result = slack_scan.cmd_record_thread_scan(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6])
+    elif cmd == "check-hold":
+        result = slack_scan.cmd_check_hold()
     elif cmd == "gh-filter":
         if len(sys.argv) < 3:
             print("usage: gh-filter '[123, 456]'", file=sys.stderr)

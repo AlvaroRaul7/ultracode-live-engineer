@@ -368,3 +368,93 @@ class TestCmdRecordThreadScan:
             slack_scan.cmd_record_thread_scan(
                 "1000.001", "3", "2026-01-02 09:00:00", "true", "not json"
             )
+
+
+def _reply_block(body, message_ts, author="Bob", uid="U222", ts_human="2026-01-01 10:05:00"):
+    """Build a single thread-reply block, chronologically after the parent
+    built by _thread_text — position in the concatenated string is the only
+    ordering signal cmd_check_hold relies on, matching real slack_read_thread
+    dumps (replies appear after the parent, in posting order)."""
+    lines = [
+        "=== REPLY ===",
+        f"From: {author} ({uid})",
+        f"Time: {ts_human}",
+        f"Message TS: {message_ts}",
+        body,
+    ]
+    return "\n".join(lines) + "\n"
+
+
+class TestCmdCheckHold:
+    def test_no_signal_not_held(self, monkeypatch):
+        text = _thread_text(mention=True, pr_number=42)
+        monkeypatch.setattr(sys, "stdin", io.StringIO(text))
+
+        result = slack_scan.cmd_check_hold()
+
+        assert result == {"held": False, "matched_phrase": None, "reason": None}
+
+    def test_fresh_objection_after_bot_review_is_held(self, monkeypatch):
+        text = _thread_text(mention=True, pr_number=42, message_ts="1000.001")
+        text += _reply_block("Reviewed and approved — only nits, see pull/42", "1000.002")
+        text += _reply_block(
+            "don't merge it. I have objections. I'm still in review", "1000.003"
+        )
+        monkeypatch.setattr(sys, "stdin", io.StringIO(text))
+
+        result = slack_scan.cmd_check_hold()
+
+        assert result["held"] is True
+        assert result["reason"] == "objection"
+        assert result["matched_phrase"] is not None
+
+    def test_bot_review_after_old_objection_is_not_held(self, monkeypatch):
+        text = _thread_text(mention=True, pr_number=42, message_ts="1000.001")
+        text += _reply_block("hold off for now, still checking", "1000.002")
+        text += _reply_block("Reviewed — 2 findings posted, see pull/42", "1000.003")
+        monkeypatch.setattr(sys, "stdin", io.StringIO(text))
+
+        result = slack_scan.cmd_check_hold()
+
+        assert result == {"held": False, "matched_phrase": None, "reason": None}
+
+    def test_hold_ack_with_no_reply_since_stays_held(self, monkeypatch):
+        text = _thread_text(mention=True, pr_number=42, message_ts="1000.001")
+        text += _reply_block("don't merge, objections open", "1000.002")
+        text += _reply_block(
+            "Holding off on re-reviewing — noted the concern above. Reply here "
+            "once it's cleared and this will pick back up next pass.",
+            "1000.003",
+        )
+        monkeypatch.setattr(sys, "stdin", io.StringIO(text))
+
+        result = slack_scan.cmd_check_hold()
+
+        assert result["held"] is True
+        assert result["reason"] == "awaiting reply since last hold notice"
+        assert result["matched_phrase"] is None
+
+    def test_any_reply_after_hold_ack_clears_the_hold(self, monkeypatch):
+        text = _thread_text(mention=True, pr_number=42, message_ts="1000.001")
+        text += _reply_block("don't merge, objections open", "1000.002")
+        text += _reply_block(
+            "Holding off on re-reviewing — noted the concern above.", "1000.003"
+        )
+        text += _reply_block("ok, go ahead", "1000.004")
+        monkeypatch.setattr(sys, "stdin", io.StringIO(text))
+
+        result = slack_scan.cmd_check_hold()
+
+        assert result == {"held": False, "matched_phrase": None, "reason": None}
+
+    def test_new_objection_after_hold_ack_stays_held(self, monkeypatch):
+        text = _thread_text(mention=True, pr_number=42, message_ts="1000.001")
+        text += _reply_block("please stop for now", "1000.002")
+        text += _reply_block("Holding off on re-reviewing — noted the concern above.", "1000.003")
+        text += _reply_block("still not ready, please wait, pls", "1000.004")
+        monkeypatch.setattr(sys, "stdin", io.StringIO(text))
+
+        result = slack_scan.cmd_check_hold()
+
+        assert result["held"] is True
+        assert result["reason"] == "objection"

@@ -6,10 +6,16 @@ enforcement; lib/github.py is the other half.
 
 These are mechanical checks that must NOT be left to model judgment — each
 one exists because a prior pass got a rule wrong by eyeballing text instead
-of matching it exactly. See the auto-memory entries:
-  - ultracode-verify-mention-before-review (reviewed a PR with no actual
-    @-mention of the human in it — a plain text-matching miss)
-  - ultracode-skip-merged-prs (reviewed PRs that had already merged)"""
+of matching it exactly. Rules of thumb that motivated this file:
+  - never infer a mention or a PR link from context — match the exact token
+  - never treat a merged/closed PR as reviewable
+  - never let silence, or the bot's own message, read as human clearance of
+    an explicit objection (see cmd_check_hold below) — a real deployment of
+    this loop once re-APPROVED a PR on the very next pass after a reviewer
+    said "don't merge it, I have objections" in the same thread it was
+    watching, because the dispatch prompt said a prior human reply "is not a
+    substitute for this review — run it regardless", with no carve-out for
+    an explicit hold request"""
 import json
 import re
 import sys
@@ -29,6 +35,34 @@ MSG_HEADER_RE = re.compile(
 MSG_TS_RE = re.compile(r"^Message TS: (?P<ts>[\d.]+)\s*$", re.MULTILINE)
 PR_LINK_RE = re.compile(r"pull/(\d+)")
 THREAD_INFO_RE = re.compile(r"Thread: (?P<count>\d+) repl\w+ \(latest: (?P<latest>[^)]+)\)")
+
+# Maintained, exact phrase list — not left to the model to eyeball for
+# "sounds like an objection". Extend this list if a real miss shows up;
+# don't make the model guess synonyms live.
+HOLD_PATTERNS = [
+    r"don'?t merge",
+    r"do not merge",
+    r"hold off",
+    r"hold on",
+    r"still (in )?review(ing)?",
+    r"i have objections?",
+    r"\bobjection\b",
+    r"\bstop( it)?\b",
+    r"not yet\b",
+    r"\bpause\b",
+    r"don'?t approve",
+    r"do not approve",
+    r"wait,? (please|pls)\b",
+]
+HOLD_RE = re.compile("|".join(HOLD_PATTERNS), re.IGNORECASE)
+
+# The bot's own fixed message templates (see ultracode-live-engineer.js) —
+# recognized by exact template text, not by author id, because on many
+# setups the bot posts through the same Slack account as the human it's
+# configured for (see CONFIG.md's human_slack_id), so author id alone can't
+# distinguish "the bot said this" from "the human personally typed this".
+BOT_ACTIVE_RE = re.compile(r"On it, re-reviewing now\.|Reviewed( and approved)?( —| -)")
+BOT_HOLD_ACK_RE = re.compile(r"Holding off on re-reviewing")
 
 
 def _normalize_raw(raw: str) -> str:
@@ -253,3 +287,63 @@ def cmd_record_thread_scan(thread_ts: str, reply_count: str, latest: str, is_can
         }
         _save_cache(cache)
     return {"recorded": True, "thread_ts": thread_ts}
+
+
+def cmd_check_hold():
+    """Mechanical check: is this Slack thread currently "held" by an
+    explicit human objection/pause request, so a re-review must NOT be
+    dispatched (and, critically, the bot must not post another GitHub
+    APPROVE) this pass? Not a full NLP judgment call — HOLD_RE above is a
+    maintained, exact phrase list, same principle as every other rule in
+    this file: extend the list if a real miss shows up, don't make the
+    model guess synonyms live at review time.
+
+    Reads a slack_read_thread dump on stdin (same shape cmd_scan_thread
+    reads). Determines which of three signals is chronologically LAST in
+    the raw text (text position is the only ordering signal available —
+    the same assumption cmd_scan_thread already relies on for "the
+    parent's Message TS is always first"):
+
+      - a HOLD_RE phrase (a human objection/pause request) — more recent
+        than the bot's last active message (an ack or a posted review
+        result) means a fresh objection: held.
+      - the bot's own last "Holding off on re-reviewing" reply, with no
+        message of ANY kind posted after it (checked via MSG_TS_RE, which
+        marks every message in both channel and thread dump formats, not
+        just ones matching HOLD_RE) — we already paused and silence since
+        then must not be read as clearance: still held.
+      - the bot's last active message (ack/review-result) most recent, or
+        no hold-relevant signal at all — normal flow, not held.
+
+    A message of ANY kind after the hold-ack lifts the hold and lets the
+    normal flow re-evaluate next pass; if that new message is itself
+    another objection, the first branch re-triggers and it stays held."""
+    raw = _normalize_raw(sys.stdin.read())
+
+    def _last_pos(pattern):
+        positions = [m.start() for m in pattern.finditer(raw)]
+        return max(positions) if positions else -1
+
+    last_hold_pos = -1
+    last_hold_phrase = None
+    for m in HOLD_RE.finditer(raw):
+        if m.start() >= last_hold_pos:
+            last_hold_pos, last_hold_phrase = m.start(), m.group(0)
+
+    last_active_pos = _last_pos(BOT_ACTIVE_RE)
+    last_hold_ack_pos = _last_pos(BOT_HOLD_ACK_RE)
+    last_message_pos = _last_pos(MSG_TS_RE)
+
+    rightmost = max(last_hold_pos, last_active_pos, last_hold_ack_pos)
+
+    if rightmost == last_hold_pos and last_hold_pos > -1:
+        return {"held": True, "matched_phrase": last_hold_phrase, "reason": "objection"}
+    if rightmost == last_hold_ack_pos and last_hold_ack_pos > -1:
+        if last_message_pos > last_hold_ack_pos:
+            return {"held": False, "matched_phrase": None, "reason": None}
+        return {
+            "held": True,
+            "matched_phrase": None,
+            "reason": "awaiting reply since last hold notice",
+        }
+    return {"held": False, "matched_phrase": None, "reason": None}
