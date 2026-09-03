@@ -43,12 +43,16 @@ servers and your `gh` CLI login.
     lockfile traps, sub-agents, required Jira fields) is a marked
     `TODO(project)` for you to fill in before trusting it unattended.
   - `pr_review`: defaults to the generic, already-portable `review-pr` skill
-    — no changes needed.
-  - `request_review`: defaults to `ask-team-to-review`. Mostly portable
-    (channel is passed explicitly), but that skill's own ticket-key
-    detection assumes a `PROJECT-NNNN` shape. If your ticket keys look
-    different, or you don't use Jira, edit that skill's message-composition
-    logic — this workflow's config can't parameterize that part away.
+    — no changes needed. This plugin also ships a stricter fork,
+    `review-pr-strict` (see `skills/review-pr-strict/`), tuned for
+    unattended use (no human in the loop to catch what a lighter pass
+    misses) — point `pr_review` at it if you want the higher bar.
+  - `request_review`: defaults to `ask-team-to-review` (see
+    `skills/ask-team-to-review/`) — fully config-driven, reads this same
+    `config.json` for the default channel, the ticket-key pattern, and the
+    optional `reviewer_areas` tagging map below. No changes needed even if
+    you don't use Jira or `reviewer_areas` — it degrades gracefully to
+    asking the user.
 - `jira_root_cause_hint` — optional (`null` if not applicable). Some Jira
   Bug-transition screens require a custom field (e.g. "Root Cause Analysis")
   before allowing the transition. If your project has this, set `field_id`
@@ -56,6 +60,28 @@ servers and your `gh` CLI login.
   common cases). If omitted, the transition prompt still works — it falls
   back to discovering required fields live via `editmeta`, just slower on
   the first hit.
+- `reviewer_areas` — optional (`null` if not applicable). Read by the
+  `ask-team-to-review` skill (not the loop itself) to auto-tag reviewers by
+  which part of the codebase a PR touches. An array of:
+  ```json
+  [
+    {
+      "area": "backend",
+      "path_prefixes": ["backend/"],
+      "reviewers": ["Jordan Lee"]
+    },
+    {
+      "area": "frontend",
+      "path_prefixes": ["frontend/"],
+      "reviewers": ["Alex Rivera", "Sam Patel"]
+    }
+  ]
+  ```
+  (illustrative names only — this plugin ships no roster; every name here is
+  supplied by you). Names are resolved to Slack `<@ID>` live via
+  `slack_search_users` on every run, never cached in this file or the skill.
+  If omitted, `ask-team-to-review` just asks the user who to tag instead of
+  auto-tagging.
 - `cache_dir` — optional. Where this loop's cache/log files live. Defaults
   to `~/.claude/ultracode-live-engineer/<repo with / replaced by ->` if
   omitted. Only set this explicitly when migrating an existing deployment

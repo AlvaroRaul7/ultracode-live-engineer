@@ -18,5 +18,6 @@
     "pr_review": "review-pr",
     "request_review": "ask-team-to-review"
   },
-  "jira_root_cause_hint": null
+  "jira_root_cause_hint": null,
+  "reviewer_areas": null
 }

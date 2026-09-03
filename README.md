@@ -48,13 +48,14 @@ Fully config-driven — repo, Slack channel, Jira project, everything lives in a
 | `workflows/ultracode-live-engineer.js`   | The multi-agent Workflow — all domain logic                                              |
 | `workflows/ultracode-live-engineer/lib/` | Deterministic rules (open PR? exact mention? stale branch?) — not left to model judgment |
 | `skills/ticket-to-pr/`                   | Generic starter skill for ticket implementation — `TODO(project)` markers to fill in     |
+| `skills/review-pr-strict/`               | Adversarial multi-agent PR review, tuned for no-human-in-the-loop use                    |
+| `skills/ask-team-to-review/`             | Posts a review request to Slack — reviewer tagging fully config-driven, no baked roster  |
 
 ## Prerequisites
 
 - [ ] Claude Code with `/loop` available
 - [ ] Connected Atlassian MCP (Jira) + Slack MCP servers
 - [ ] `gh` CLI authenticated as the acting GitHub account
-- [ ] A `review-pr`-style and `ask-team-to-review`-style skill (generic ones work out of the box)
 - [ ] Your own `ticket_to_pr` skill, customized from the shipped starter
 
 ## Install
