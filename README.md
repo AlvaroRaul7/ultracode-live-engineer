@@ -40,6 +40,15 @@ No human input required mid-pass — anything ambiguous parks itself on hold and
 
 Fully config-driven — repo, Slack channel, Jira project, everything lives in a per-project `config.json`, never in the plugin.
 
+## Parallelism
+
+Two independent layers of concurrency keep a pass fast, driven by real pass-history data (idle passes were previously costing 130-260s and 7-11 `agent()` calls just to find nothing to do):
+
+- **Phase-level.** Slack Review, PR Follow-up, and Jira Selection read no output from one another, so they run concurrently via `parallel()` instead of strictly sequentially. Each is wrapped by a `runPhase()` helper so a crash in one phase no longer aborts the other two — a reliability win alongside the latency one, with the failure surfaced as `crashedPhase` / `crashedError` in the pass summary.
+- **Ticket-level.** Jira ticket implementation is bounded by a single configurable `max_concurrent_tickets` (default 4) rather than one ticket per pass. Resumable on-hold tickets fill open slots before fresh selection runs, and each ticket still gets its own isolated git worktree. The old single-ticket-in-flight restriction and its `daily_pr_cap` guardrail are gone — concurrency is now the sole backpressure mechanism, and the pass summary's `ticketKeys` / `ticketOutcomes` / `escalatedTicketKeys` fields are arrays to match.
+
+Alongside the phase parallelism, purely mechanical Bash/`gh`-CLI steps (owned-open-PR listing + per-PR feedback checks, per-branch staleness checks) that used to cost one `agent()` call each are batched into a single call per group — each `agent()` call carries a large fixed overhead regardless of task size, so cutting call count is the bigger lever for the common idle case.
+
 ## Layout
 
 | Path                                     | Purpose                                                                                  |
