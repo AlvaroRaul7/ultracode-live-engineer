@@ -1,6 +1,6 @@
 {
   "name": "ultracode-live-engineer",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Unattended loop: watches Slack for @mention-tagged PR review requests and works a Jira backlog end-to-end, wired into the /loop autonomous scheduler.",
   "author": {
     "name": "AlvaroRaul7",
